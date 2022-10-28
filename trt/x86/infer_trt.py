@@ -136,8 +136,11 @@ class Engine:
         im = torch.empty(*imgsz, dtype=torch.half if self.fp16 else torch.float, device=self.device)  # input
         return self.forward(im)
     
-    def preprocess(self, im_path):
-        im0 = cv2.imread(im_path) #BGR format
+    def preprocess(self, img_in):
+        if type(img_in) is np.ndarray:
+            im0=img_in
+        else:
+            im0 = cv2.imread(img_in) #BGR format
         im = im0.astype(np.float32)
         im /= 255 # normalize to [0,1]
         im = im.transpose((2, 0, 1))[::-1] # HWC to CHW, BGR to RGB
