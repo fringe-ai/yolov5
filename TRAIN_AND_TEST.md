@@ -45,8 +45,10 @@ val: images  # val images (relative to 'path')
 test:  # test images (optional)
  
 # Classes
-nc: 3  # number of classes
-names: ['peeling', 'scuff', 'white']  # class names must match with the names in class_map.json
+names: # class names must match with the names in class_map.json
+  0: peeling
+  1: scuff
+  2: white
 ```
 Let's save the yaml file as `./config/example.yaml`
 
