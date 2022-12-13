@@ -53,13 +53,13 @@ names: # class names must match with the names in class_map.json
 Let's save the yaml file as `./config/example.yaml`
 
 ## Download the pre-trained yolo model
-The pre-trained yolo models can be found in: https://github.com/ultralytics/yolov5/releases/tag/v6.0. 
+The pre-trained yolo models can be found in: https://github.com/ultralytics/yolov5/releases/tag/v7.0. 
 The following command shows that 
-- download [the pre-trained model (yolov5s.pt)](https://github.com/ultralytics/yolov5/releases/download/v6.0/yolov5s.pt)
+- download [the pre-trained model (yolov5s.pt)](https://github.com/ultralytics/yolov5/releases/download/v7.0/yolov5s.pt)
 - save it to `./pretrained-models`.
 
 ```bash
-wget https://github.com/ultralytics/yolov5/releases/download/v6.0/yolov5s.pt -P ./pretrained-models
+wget https://github.com/ultralytics/yolov5/releases/download/v7.0/yolov5s.pt -P ./pretrained-models
 ```
 
 ## Train the model
@@ -67,7 +67,7 @@ The command below trains the datasets in the yaml file with the following argume
 - img: image size
 - batch: batch size
 - data: the path to the yaml file
-- rect(optinal): if the images are rectangular
+- **rect: if the images are rectangular**
 - weights: the path to the pre-trained weights file
 - project: the output folder
 - name: the subfolder to be created inside the output folder
@@ -110,31 +110,7 @@ python -m yolov5.detect --source ./data/resized_640_yolo/images --weights ./trai
 The output results are saved in `./validation/example`.
 
 # Generate TensorRT Engine
-Go to yolov5/trt/x86 and modify the `volumes` in the docker-compose.yaml
-```yaml
-version: "3.9"
-services:
-  generate_trt:
-    build:
-      context: .
-      dockerfile: ./x86.dockerfile
-    volumes:
-      - ./data/allImages_1024_catheter_yolo/images:/app/images
-      - ./trained-inference-models/:/app/trained-inference-models/
-      - ./outputs/:/app/outputs/
-      - ./build_engine.sh:/app/build_engine.sh
-      - ./infer_trt.py:/app/infer_trt.py
-    deploy:
-        resources:
-          reservations:
-            devices:
-              - driver: nvidia
-                count: 1
-                capabilities: [gpu]
-    command: bash /app/build_engine.sh
-``` 
-Once the volumes are setup correctly, generate the engine
-```bash
-docker-compose up
-``` 
-Refer to here (Depreciated): https://github.com/lmitechnologies/tensorrtx/blob/master/yolov5/README.md
+Two ways of generating tensorRT engine.
+1. Refer to https://github.com/lmitechnologies/tensorrtx/blob/master/yolov5/README.md.   
+2. Refer to here (still developing): https://github.com/lmitechnologies/yolov5/tree/ais/trt/x86.  
+
