@@ -5,8 +5,14 @@ import os
 import random
 import numpy as np
 import torch
+import torch.nn.functional as F
 import torchvision
 import tensorrt as trt
+
+# from yolov5.utils.general import xywh2xyxy, clip_boxes, scale_boxes, clip_segments, scale_segments
+# from yolov5.utils.metrics import box_iou
+# from yolov5.utils.segment.general import masks2segments, process_mask, crop_mask
+
 
 BATCH_SIZE = 1
 
@@ -30,13 +36,14 @@ def get_img_path_batches(batch_size, img_dir):
     return ret
 
 
-def plot_one_box(x, img, color=None, label=None, line_thickness=None):
+def plot_one_box(box, img, mask=None, mask_threshold:int=0, color=None, label=None, line_thickness=None):
     """
-    description: Plots one bounding box on image img,
+    description: Plots one bounding box and mask (optinal) on image img,
                  this function comes from YoLov5 project.
     param: 
-        x:      a box likes [x1,y1,x2,y2]
-        img:    a opencv image object
+        box:    a box likes [x1,y1,x2,y2]
+        img:    a opencv image object in BGR format
+        mask:   a binary mask for the box
         color:  color to draw rectangle, such as (0,255,0)
         label:  str
         line_thickness: int
@@ -47,11 +54,23 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None):
         line_thickness or round(0.002 * (img.shape[0] + img.shape[1]) / 2) + 1
     )  # line/font thickness
     color = color or [random.randint(0, 255) for _ in range(3)]
-    c1, c2 = (int(x[0]), int(x[1])), (int(x[2]), int(x[3]))
+    
+    if isinstance(box, list):
+        box = np.array([x.cpu() for x in box])
+    if torch.is_tensor(mask):
+        mask = mask.cpu().numpy()
+        
+    x1,y1,x2,y2 = box.astype(int)
+    c1, c2 = (x1, y1), (x2, y2)
     cv2.rectangle(img, c1, c2, color, thickness=tl, lineType=cv2.LINE_AA)
+    if mask is not None:
+        # mask *= 255
+        m = mask>mask_threshold
+        blended = (0.4 * np.array(color,dtype=float) + 0.6 * img[m]).astype(np.uint8)
+        img[m] = blended
     if label:
         tf = max(tl - 1, 1)  # font thickness
-        t_size = cv2.getTextSize(label, 0, fontScale=tl / 3, thickness=tf)[0]
+        t_size = cv2.getTextSize(label, 0, fontScale=tl / 4, thickness=tf)[0]
         c2 = c1[0] + t_size[0], c1[1] - t_size[1] - 3
         cv2.rectangle(img, c1, c2, color, -1, cv2.LINE_AA)  # filled
         cv2.putText(
@@ -59,7 +78,7 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None):
             label,
             (c1[0], c1[1] - 2),
             0,
-            tl / 3,
+            tl / 4,
             [225, 255, 255],
             thickness=tf,
             lineType=cv2.LINE_AA,
@@ -68,6 +87,7 @@ def plot_one_box(x, img, color=None, label=None, line_thickness=None):
 
 class Engine:
     logger = logging.getLogger('ENGINE')
+    
     
     def __init__(self, weights='') -> None:
         w = str(weights[0] if isinstance(weights, list) else weights)
@@ -106,7 +126,12 @@ class Engine:
             bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
         binding_addrs = OrderedDict((n, d.ptr) for n, d in bindings.items())
         batch_size = bindings['images'].shape[0]
+        if len(output_names)>1:
+            use_mask = 1
+        else:
+            use_mask = 0
         self.__dict__.update(locals())
+
 
     def forward(self, im):
         if self.fp16:
@@ -128,13 +153,16 @@ class Engine:
         else:
             return self.from_numpy(y)
         
+        
     def from_numpy(self, x):
         return torch.from_numpy(x).to(self.device) if isinstance(x, np.ndarray) else x
+    
     
     def warmup(self, imgsz=(1, 3, 640, 640)):
         # Warmup model by running inference once
         im = torch.empty(*imgsz, dtype=torch.half if self.fp16 else torch.float, device=self.device)  # input
         return self.forward(im)
+    
     
     def preprocess(self, im_path):
         im0 = cv2.imread(im_path) #BGR format
@@ -146,16 +174,28 @@ class Engine:
             im = im[None] # expand for batch dim
         return self.from_numpy(im), im0
     
-    def postprocess(self,prediction,im0,conf_thres=0.25,iou_thres=0.45,max_det=100):
+    
+    def postprocess(self,prediction,im0,proto=None,conf_thres=0.25,iou_thres=0.45,max_det=100):
         # Process predictions
         pred = engine.non_max_suppression(prediction,max_det=max_det,conf_thres=conf_thres,iou_thres=iou_thres)
-        for det in pred:  # per image
+        segments = []
+        masks = []
+        for i,det in enumerate(pred):  # per image
             if len(det)==0:
                 continue
             # Rescale boxes from img_size to im0 size
             model_shape = (self.input_h,self.input_w)
-            det[:, :4] = self.scale_boxes(model_shape, det[:, :4], model_shape).round()
-        return pred
+            if proto is not None:
+                mask = self.process_mask(proto[i], det[:, 6:], det[:, :4], model_shape, upsample=True) 
+                masks += [mask]
+                segs = [
+                        self.scale_segments(model_shape, x, im0.shape, normalize=True)
+                        for x in reversed(self.masks2segments(mask))]
+                segments += [segs]
+            det[:, :4] = self.scale_boxes(model_shape, det[:, :4], im0.shape).round()
+            
+        return [pred, segments, masks] if self.use_mask else pred
+    
     
     def non_max_suppression(self, 
         prediction,
@@ -175,6 +215,9 @@ class Engine:
 
         if isinstance(prediction, (list, tuple)):  # YOLOv5 model in validation model, output = (inference_out, loss_out)
             prediction = prediction[0]  # select only inference output
+            
+        if self.use_mask:
+            nm = 32
 
         bs = prediction.shape[0]  # batch size
         nc = prediction.shape[2] - nm - 5  # number of classes
@@ -290,6 +333,7 @@ class Engine:
         # IoU = inter / (area1 + area2 - inter)
         return inter / (box_area(box1.T)[:, None] + box_area(box2.T) - inter + eps)
 
+
     def xywh2xyxy(self, x):
         # Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
         y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
@@ -298,6 +342,7 @@ class Engine:
         y[:, 2] = x[:, 0] + x[:, 2] / 2  # bottom right x
         y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
         return y
+    
     
     def clip_boxes(self, boxes, shape):
         # Clip boxes (xyxy) to image shape (height, width)
@@ -309,6 +354,7 @@ class Engine:
         else:  # np.array (faster grouped)
             boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, shape[1])  # x1, x2
             boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, shape[0])  # y1, y2
+    
     
     def scale_boxes(self, img1_shape, boxes, img0_shape, ratio_pad=None):
         # Rescale boxes (xyxy) from img1_shape to img0_shape
@@ -324,6 +370,96 @@ class Engine:
         boxes[:, :4] /= gain
         self.clip_boxes(boxes, img0_shape)
         return boxes
+    
+    
+    def clip_segments(self, segments, shape):
+        # Clip segments (xy1,xy2,...) to image shape (height, width)
+        if isinstance(segments, torch.Tensor):  # faster individually
+            segments[:, 0].clamp_(0, shape[1])  # x
+            segments[:, 1].clamp_(0, shape[0])  # y
+        else:  # np.array (faster grouped)
+            segments[:, 0] = segments[:, 0].clip(0, shape[1])  # x
+            segments[:, 1] = segments[:, 1].clip(0, shape[0])  # y
+            
+            
+    def scale_segments(self, img1_shape, segments, img0_shape, ratio_pad=None, normalize=False):
+        # Rescale coords (xyxy) from img1_shape to img0_shape
+        if ratio_pad is None:  # calculate from img0_shape
+            gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain  = old / new
+            pad = (img1_shape[1] - img0_shape[1] * gain) / 2, (img1_shape[0] - img0_shape[0] * gain) / 2  # wh padding
+        else:
+            gain = ratio_pad[0][0]
+            pad = ratio_pad[1]
+
+        segments[:, 0] -= pad[0]  # x padding
+        segments[:, 1] -= pad[1]  # y padding
+        segments /= gain
+        self.clip_segments(segments, img0_shape)
+        if normalize:
+            segments[:, 0] /= img0_shape[1]  # width
+            segments[:, 1] /= img0_shape[0]  # height
+        return segments
+    
+    
+    def crop_mask(self, masks, boxes):
+        """
+        "Crop" predicted masks by zeroing out everything not in the predicted bbox.
+        Vectorized by Chong (thanks Chong).
+
+        Args:
+            - masks should be a size [h, w, n] tensor of masks
+            - boxes should be a size [n, 4] tensor of bbox coords in relative point form
+        """
+
+        n, h, w = masks.shape
+        x1, y1, x2, y2 = torch.chunk(boxes[:, :, None], 4, 1)  # x1 shape(1,1,n)
+        r = torch.arange(w, device=masks.device, dtype=x1.dtype)[None, None, :]  # rows shape(1,w,1)
+        c = torch.arange(h, device=masks.device, dtype=x1.dtype)[None, :, None]  # cols shape(h,1,1)
+
+        return masks * ((r >= x1) * (r < x2) * (c >= y1) * (c < y2))
+    
+    
+    def process_mask(self, protos, masks_in, bboxes, shape, upsample=False):
+        """
+        Crop before upsample.
+        proto_out: [mask_dim, mask_h, mask_w]
+        out_masks: [n, mask_dim], n is number of masks after nms
+        bboxes: [n, 4], n is number of masks after nms
+        shape:input_image_size, (h, w)
+
+        return: h, w, n
+        """
+
+        c, mh, mw = protos.shape  # CHW
+        ih, iw = shape
+        masks = (masks_in @ protos.float().view(c, -1)).sigmoid().view(-1, mh, mw)  # CHW
+
+        downsampled_bboxes = bboxes.clone()
+        downsampled_bboxes[:, 0] *= mw / iw
+        downsampled_bboxes[:, 2] *= mw / iw
+        downsampled_bboxes[:, 3] *= mh / ih
+        downsampled_bboxes[:, 1] *= mh / ih
+
+        masks = self.crop_mask(masks, downsampled_bboxes)  # CHW
+        if upsample:
+            masks = F.interpolate(masks[None], shape, mode='bilinear', align_corners=False)[0]  # CHW
+        return masks.gt_(0.5)
+    
+    
+    def masks2segments(self, masks, strategy='largest'):
+        # Convert masks(n,160,160) into segments(n,xy)
+        segments = []
+        for x in masks.int().cpu().numpy().astype('uint8'):
+            c = cv2.findContours(x, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+            if c:
+                if strategy == 'concat':  # concatenate all segments
+                    c = np.concatenate([x.reshape(-1, 2) for x in c])
+                elif strategy == 'largest':  # select largest segment
+                    c = np.array(c[np.array([len(x) for x in c]).argmax()]).reshape(-1, 2)
+            else:
+                c = np.zeros((0, 2))  # no segments found
+            segments.append(c.astype('float32'))
+        return segments
 
 
 
@@ -336,6 +472,7 @@ if __name__ == '__main__':
     parser.add_argument('-i','--path_imgs',help='the path to the images')
     parser.add_argument('-o','--path_out',help='the path to the output folder')
     args = parser.parse_args()
+    
     h,w = args.imsz
     engine = Engine(args.engine)
     logger = engine.logger
@@ -354,16 +491,25 @@ if __name__ == '__main__':
         for p in batch:
             t1 = time.time()
             im,im0 = engine.preprocess(p)
-            pred = engine.forward(im)
-            dets = engine.postprocess(pred,im0)
+            if engine.use_mask:
+                pred,proto = engine.forward(im)
+                dets,segs,masks = engine.postprocess(pred,im0,proto)
+            else:
+                pred = engine.forward(im)
+                dets = engine.postprocess(pred,im0)
 
             #annotation
             fname = os.path.basename(p)
             save_path = os.path.join(args.path_out,fname)
             im_out = np.copy(im0)
-            for det in dets:
-                for *xyxy, conf, cls in reversed(det):
-                    plot_one_box(xyxy,im_out,label=f'{cls}:{conf:.2f}')
+            for i,det in enumerate(dets):
+                if engine.use_mask:
+                    for j in range(len(det)-1,-1,-1):
+                        *xyxy, conf, cls = det[j][:6]
+                        plot_one_box(xyxy,im_out,masks[i][j],label=f'{int(cls)}: {conf:.2f}')
+                else:
+                    for *xyxy, conf, cls in reversed(det):
+                        plot_one_box(xyxy,im_out,label=f'{int(cls)}: {conf:.2f}')
             cv2.imwrite(save_path,im_out)
                 
             t2 = time.time()
