@@ -5,7 +5,7 @@ import numpy as np
 import pycuda.autoinit
 import pycuda.driver as cuda
 
-from yolov5.trt.base_trt_model import TRT_Model
+from yolov5.trt.old.base_trt_model import TRT_Model
 
 
 class YoLov5TRT(TRT_Model):

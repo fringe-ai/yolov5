@@ -9,8 +9,8 @@ from yolov5.trt.yolov5_trt import YoLov5TRT
 
 
 BATCH_SIZE = 1
-
 logging.basicConfig(level=logging.DEBUG)
+
 
 def get_img_path_batches(batch_size, img_dir):
     ret = []
@@ -80,9 +80,6 @@ def plot_one_box(box, img, mask=None, mask_threshold:int=0, color=None, label=No
 
 
 
-
-
-
 if __name__ == '__main__':
     import argparse
     import time
@@ -130,7 +127,7 @@ if __name__ == '__main__':
                 else:
                     for *xyxy, conf, cls in reversed(det):
                         plot_one_box(xyxy,im_out,label=f'{int(cls)}: {conf:.2f}')
-            cv2.imwrite(save_path,im_out)
+            cv2.imwrite(save_path,im_out[:,:,::-1])
                 
             t2 = time.time()
             logger.info(f'proc time of {fname} -> {t2-t1:.4f}')
