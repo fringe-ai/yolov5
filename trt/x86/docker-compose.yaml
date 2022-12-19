@@ -5,7 +5,7 @@ services:
       context: .
       dockerfile: ./x86.dockerfile
     volumes:
-      - ./data/allImages_1024_catheter_yolo/images:/app/images
+      - ./data/images:/app/images
       - ./trained-inference-models/:/app/trained-inference-models/
       - ./outputs/:/app/outputs/
       - ./build_engine.sh:/app/build_engine.sh
