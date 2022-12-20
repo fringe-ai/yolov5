@@ -40,20 +40,21 @@ class YoLov5TRT:
         fp16 = False  # default updated below
         dynamic = False
         for i in range(model.num_bindings):
-            name = model.get_tensor_name(i)
-            self.logger.info(f'binding {name} with the shape of {model.get_tensor_shape(name)}')
-            dtype = trt.nptype(model.get_tensor_dtype(name))
-            if model.get_tensor_mode(name)==trt.TensorIOMode.INPUT:
-                if -1 in tuple(model.get_tensor_shape(name)):  # dynamic
+            name = model.get_binding_name(i)
+            dtype = trt.nptype(model.get_binding_dtype(i))
+            
+            self.logger.info(f'binding {name} with the shape of {model.get_binding_shape(i)}')
+            if model.binding_is_input(i):
+                if -1 in tuple(model.get_binding_shape(i)):  # dynamic
                     dynamic = True
                     context.set_binding_shape(i, tuple(model.get_profile_shape(0, i)[2]))
                 if dtype == np.float16:
-                    input_h,input_w = model.get_tensor_shape(name)[-2:]
+                    input_h,input_w = model.get_binding_shape(i)[-2:]
                     self.logger.info(f'found tensorRT input h,w = {input_h,input_w}')
                     fp16 = True
             else:  # output
                 output_names.append(name)
-            shape = tuple(context.get_tensor_shape(name))
+            shape = tuple(context.get_binding_shape(i))
             im = torch.from_numpy(np.empty(shape, dtype=dtype)).to(device)
             bindings[name] = Binding(name, dtype, shape, im, int(im.data_ptr()))
         binding_addrs = OrderedDict((n, d.ptr) for n, d in bindings.items())
