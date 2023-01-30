@@ -9,7 +9,6 @@ services:
       - ./trained-inference-models/:/app/trained-inference-models/
       - ./outputs/:/app/outputs/
       - ./build_engine.sh:/app/build_engine.sh
-      - ./infer_trt.py:/app/infer_trt.py
     deploy:
         resources:
           reservations:
