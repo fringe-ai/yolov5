@@ -8,9 +8,9 @@ import torch.nn.functional as F
 import torchvision
 import tensorrt as trt
 
-# from yolov5.utils.general import xywh2xyxy, clip_boxes, scale_boxes, clip_segments, scale_segments
-# from yolov5.utils.metrics import box_iou
-# from yolov5.utils.segment.general import masks2segments, process_mask, crop_mask
+from ..utils.general import xywh2xyxy, clip_boxes, scale_boxes, clip_segments, scale_segments
+from ..utils.metrics import box_iou
+from ..utils.segment.general import masks2segments, process_mask, crop_mask
 
 
 class YoLov5TRT:
@@ -282,154 +282,154 @@ class YoLov5TRT:
         return output
     
 
-    def box_iou(self, box1, box2, eps=1e-7):
-        # https://github.com/pytorch/vision/blob/master/torchvision/ops/boxes.py
-        """
-        Return intersection-over-union (Jaccard index) of boxes.
-        Both sets of boxes are expected to be in (x1, y1, x2, y2) format.
-        Arguments:
-            box1 (Tensor[N, 4])
-            box2 (Tensor[M, 4])
-        Returns:
-            iou (Tensor[N, M]): the NxM matrix containing the pairwise
-                IoU values for every element in boxes1 and boxes2
-        """
-        def box_area(box):
-            # box = xyxy(4,n)
-            return (box[2] - box[0]) * (box[3] - box[1])
+    # def box_iou(self, box1, box2, eps=1e-7):
+    #     # https://github.com/pytorch/vision/blob/master/torchvision/ops/boxes.py
+    #     """
+    #     Return intersection-over-union (Jaccard index) of boxes.
+    #     Both sets of boxes are expected to be in (x1, y1, x2, y2) format.
+    #     Arguments:
+    #         box1 (Tensor[N, 4])
+    #         box2 (Tensor[M, 4])
+    #     Returns:
+    #         iou (Tensor[N, M]): the NxM matrix containing the pairwise
+    #             IoU values for every element in boxes1 and boxes2
+    #     """
+    #     def box_area(box):
+    #         # box = xyxy(4,n)
+    #         return (box[2] - box[0]) * (box[3] - box[1])
 
-        # inter(N,M) = (rb(N,M,2) - lt(N,M,2)).clamp(0).prod(2)
-        (a1, a2), (b1, b2) = box1[:, None].chunk(2, 2), box2.chunk(2, 1)
-        inter = (torch.min(a2, b2) - torch.max(a1, b1)).clamp(0).prod(2)
+    #     # inter(N,M) = (rb(N,M,2) - lt(N,M,2)).clamp(0).prod(2)
+    #     (a1, a2), (b1, b2) = box1[:, None].chunk(2, 2), box2.chunk(2, 1)
+    #     inter = (torch.min(a2, b2) - torch.max(a1, b1)).clamp(0).prod(2)
 
-        # IoU = inter / (area1 + area2 - inter)
-        return inter / (box_area(box1.T)[:, None] + box_area(box2.T) - inter + eps)
+    #     # IoU = inter / (area1 + area2 - inter)
+    #     return inter / (box_area(box1.T)[:, None] + box_area(box2.T) - inter + eps)
 
 
-    def xywh2xyxy(self, x):
-        # Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
-        y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
-        y[:, 0] = x[:, 0] - x[:, 2] / 2  # top left x
-        y[:, 1] = x[:, 1] - x[:, 3] / 2  # top left y
-        y[:, 2] = x[:, 0] + x[:, 2] / 2  # bottom right x
-        y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
-        return y
+    # def xywh2xyxy(self, x):
+    #     # Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
+    #     y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
+    #     y[:, 0] = x[:, 0] - x[:, 2] / 2  # top left x
+    #     y[:, 1] = x[:, 1] - x[:, 3] / 2  # top left y
+    #     y[:, 2] = x[:, 0] + x[:, 2] / 2  # bottom right x
+    #     y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
+    #     return y
     
     
-    def clip_boxes(self, boxes, shape):
-        # Clip boxes (xyxy) to image shape (height, width)
-        if isinstance(boxes, torch.Tensor):  # faster individually
-            boxes[:, 0].clamp_(0, shape[1])  # x1
-            boxes[:, 1].clamp_(0, shape[0])  # y1
-            boxes[:, 2].clamp_(0, shape[1])  # x2
-            boxes[:, 3].clamp_(0, shape[0])  # y2
-        else:  # np.array (faster grouped)
-            boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, shape[1])  # x1, x2
-            boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, shape[0])  # y1, y2
+    # def clip_boxes(self, boxes, shape):
+    #     # Clip boxes (xyxy) to image shape (height, width)
+    #     if isinstance(boxes, torch.Tensor):  # faster individually
+    #         boxes[:, 0].clamp_(0, shape[1])  # x1
+    #         boxes[:, 1].clamp_(0, shape[0])  # y1
+    #         boxes[:, 2].clamp_(0, shape[1])  # x2
+    #         boxes[:, 3].clamp_(0, shape[0])  # y2
+    #     else:  # np.array (faster grouped)
+    #         boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, shape[1])  # x1, x2
+    #         boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, shape[0])  # y1, y2
     
     
-    def scale_boxes(self, img1_shape, boxes, img0_shape, ratio_pad=None):
-        # Rescale boxes (xyxy) from img1_shape to img0_shape
-        if ratio_pad is None:  # calculate from img0_shape
-            gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain  = old / new
-            pad = (img1_shape[1] - img0_shape[1] * gain) / 2, (img1_shape[0] - img0_shape[0] * gain) / 2  # wh padding
-        else:
-            gain = ratio_pad[0][0]
-            pad = ratio_pad[1]
+    # def scale_boxes(self, img1_shape, boxes, img0_shape, ratio_pad=None):
+    #     # Rescale boxes (xyxy) from img1_shape to img0_shape
+    #     if ratio_pad is None:  # calculate from img0_shape
+    #         gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain  = old / new
+    #         pad = (img1_shape[1] - img0_shape[1] * gain) / 2, (img1_shape[0] - img0_shape[0] * gain) / 2  # wh padding
+    #     else:
+    #         gain = ratio_pad[0][0]
+    #         pad = ratio_pad[1]
 
-        boxes[:, [0, 2]] -= pad[0]  # x padding
-        boxes[:, [1, 3]] -= pad[1]  # y padding
-        boxes[:, :4] /= gain
-        self.clip_boxes(boxes, img0_shape)
-        return boxes
+    #     boxes[:, [0, 2]] -= pad[0]  # x padding
+    #     boxes[:, [1, 3]] -= pad[1]  # y padding
+    #     boxes[:, :4] /= gain
+    #     self.clip_boxes(boxes, img0_shape)
+    #     return boxes
     
     
-    def clip_segments(self, segments, shape):
-        # Clip segments (xy1,xy2,...) to image shape (height, width)
-        if isinstance(segments, torch.Tensor):  # faster individually
-            segments[:, 0].clamp_(0, shape[1])  # x
-            segments[:, 1].clamp_(0, shape[0])  # y
-        else:  # np.array (faster grouped)
-            segments[:, 0] = segments[:, 0].clip(0, shape[1])  # x
-            segments[:, 1] = segments[:, 1].clip(0, shape[0])  # y
+    # def clip_segments(self, segments, shape):
+    #     # Clip segments (xy1,xy2,...) to image shape (height, width)
+    #     if isinstance(segments, torch.Tensor):  # faster individually
+    #         segments[:, 0].clamp_(0, shape[1])  # x
+    #         segments[:, 1].clamp_(0, shape[0])  # y
+    #     else:  # np.array (faster grouped)
+    #         segments[:, 0] = segments[:, 0].clip(0, shape[1])  # x
+    #         segments[:, 1] = segments[:, 1].clip(0, shape[0])  # y
             
             
-    def scale_segments(self, img1_shape, segments, img0_shape, ratio_pad=None, normalize=False):
-        # Rescale coords (xyxy) from img1_shape to img0_shape
-        if ratio_pad is None:  # calculate from img0_shape
-            gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain  = old / new
-            pad = (img1_shape[1] - img0_shape[1] * gain) / 2, (img1_shape[0] - img0_shape[0] * gain) / 2  # wh padding
-        else:
-            gain = ratio_pad[0][0]
-            pad = ratio_pad[1]
+    # def scale_segments(self, img1_shape, segments, img0_shape, ratio_pad=None, normalize=False):
+    #     # Rescale coords (xyxy) from img1_shape to img0_shape
+    #     if ratio_pad is None:  # calculate from img0_shape
+    #         gain = min(img1_shape[0] / img0_shape[0], img1_shape[1] / img0_shape[1])  # gain  = old / new
+    #         pad = (img1_shape[1] - img0_shape[1] * gain) / 2, (img1_shape[0] - img0_shape[0] * gain) / 2  # wh padding
+    #     else:
+    #         gain = ratio_pad[0][0]
+    #         pad = ratio_pad[1]
 
-        segments[:, 0] -= pad[0]  # x padding
-        segments[:, 1] -= pad[1]  # y padding
-        segments /= gain
-        self.clip_segments(segments, img0_shape)
-        if normalize:
-            segments[:, 0] /= img0_shape[1]  # width
-            segments[:, 1] /= img0_shape[0]  # height
-        return segments
+    #     segments[:, 0] -= pad[0]  # x padding
+    #     segments[:, 1] -= pad[1]  # y padding
+    #     segments /= gain
+    #     self.clip_segments(segments, img0_shape)
+    #     if normalize:
+    #         segments[:, 0] /= img0_shape[1]  # width
+    #         segments[:, 1] /= img0_shape[0]  # height
+    #     return segments
     
     
-    def crop_mask(self, masks, boxes):
-        """
-        "Crop" predicted masks by zeroing out everything not in the predicted bbox.
-        Vectorized by Chong (thanks Chong).
+    # def crop_mask(self, masks, boxes):
+    #     """
+    #     "Crop" predicted masks by zeroing out everything not in the predicted bbox.
+    #     Vectorized by Chong (thanks Chong).
 
-        Args:
-            - masks should be a size [h, w, n] tensor of masks
-            - boxes should be a size [n, 4] tensor of bbox coords in relative point form
-        """
+    #     Args:
+    #         - masks should be a size [h, w, n] tensor of masks
+    #         - boxes should be a size [n, 4] tensor of bbox coords in relative point form
+    #     """
 
-        n, h, w = masks.shape
-        x1, y1, x2, y2 = torch.chunk(boxes[:, :, None], 4, 1)  # x1 shape(1,1,n)
-        r = torch.arange(w, device=masks.device, dtype=x1.dtype)[None, None, :]  # rows shape(1,w,1)
-        c = torch.arange(h, device=masks.device, dtype=x1.dtype)[None, :, None]  # cols shape(h,1,1)
+    #     n, h, w = masks.shape
+    #     x1, y1, x2, y2 = torch.chunk(boxes[:, :, None], 4, 1)  # x1 shape(1,1,n)
+    #     r = torch.arange(w, device=masks.device, dtype=x1.dtype)[None, None, :]  # rows shape(1,w,1)
+    #     c = torch.arange(h, device=masks.device, dtype=x1.dtype)[None, :, None]  # cols shape(h,1,1)
 
-        return masks * ((r >= x1) * (r < x2) * (c >= y1) * (c < y2))
+    #     return masks * ((r >= x1) * (r < x2) * (c >= y1) * (c < y2))
     
     
-    def process_mask(self, protos, masks_in, bboxes, shape, upsample=False):
-        """
-        Crop before upsample.
-        proto_out: [mask_dim, mask_h, mask_w]
-        out_masks: [n, mask_dim], n is number of masks after nms
-        bboxes: [n, 4], n is number of masks after nms
-        shape:input_image_size, (h, w)
+    # def process_mask(self, protos, masks_in, bboxes, shape, upsample=False):
+    #     """
+    #     Crop before upsample.
+    #     proto_out: [mask_dim, mask_h, mask_w]
+    #     out_masks: [n, mask_dim], n is number of masks after nms
+    #     bboxes: [n, 4], n is number of masks after nms
+    #     shape:input_image_size, (h, w)
 
-        return: h, w, n
-        """
+    #     return: h, w, n
+    #     """
 
-        c, mh, mw = protos.shape  # CHW
-        ih, iw = shape
-        masks = (masks_in @ protos.float().view(c, -1)).sigmoid().view(-1, mh, mw)  # CHW
+    #     c, mh, mw = protos.shape  # CHW
+    #     ih, iw = shape
+    #     masks = (masks_in @ protos.float().view(c, -1)).sigmoid().view(-1, mh, mw)  # CHW
 
-        downsampled_bboxes = bboxes.clone()
-        downsampled_bboxes[:, 0] *= mw / iw
-        downsampled_bboxes[:, 2] *= mw / iw
-        downsampled_bboxes[:, 3] *= mh / ih
-        downsampled_bboxes[:, 1] *= mh / ih
+    #     downsampled_bboxes = bboxes.clone()
+    #     downsampled_bboxes[:, 0] *= mw / iw
+    #     downsampled_bboxes[:, 2] *= mw / iw
+    #     downsampled_bboxes[:, 3] *= mh / ih
+    #     downsampled_bboxes[:, 1] *= mh / ih
 
-        masks = self.crop_mask(masks, downsampled_bboxes)  # CHW
-        if upsample:
-            masks = F.interpolate(masks[None], shape, mode='bilinear', align_corners=False)[0]  # CHW
-        return masks.gt_(0.5)
+    #     masks = self.crop_mask(masks, downsampled_bboxes)  # CHW
+    #     if upsample:
+    #         masks = F.interpolate(masks[None], shape, mode='bilinear', align_corners=False)[0]  # CHW
+    #     return masks.gt_(0.5)
     
     
-    def masks2segments(self, masks, strategy='largest'):
-        # Convert masks(n,160,160) into segments(n,xy)
-        segments = []
-        for x in masks.int().cpu().numpy().astype('uint8'):
-            c = cv2.findContours(x, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
-            if c:
-                if strategy == 'concat':  # concatenate all segments
-                    c = np.concatenate([x.reshape(-1, 2) for x in c])
-                elif strategy == 'largest':  # select largest segment
-                    c = np.array(c[np.array([len(x) for x in c]).argmax()]).reshape(-1, 2)
-            else:
-                c = np.zeros((0, 2))  # no segments found
-            segments.append(c.astype('float32'))
-        return segments
+    # def masks2segments(self, masks, strategy='largest'):
+    #     # Convert masks(n,160,160) into segments(n,xy)
+    #     segments = []
+    #     for x in masks.int().cpu().numpy().astype('uint8'):
+    #         c = cv2.findContours(x, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0]
+    #         if c:
+    #             if strategy == 'concat':  # concatenate all segments
+    #                 c = np.concatenate([x.reshape(-1, 2) for x in c])
+    #             elif strategy == 'largest':  # select largest segment
+    #                 c = np.array(c[np.array([len(x) for x in c]).argmax()]).reshape(-1, 2)
+    #         else:
+    #             c = np.zeros((0, 2))  # no segments found
+    #         segments.append(c.astype('float32'))
+    #     return segments
     
