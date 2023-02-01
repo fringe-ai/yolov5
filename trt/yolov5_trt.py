@@ -137,7 +137,7 @@ class YoLov5TRT:
         return self.preprocess(im0)
     
     
-    def postprocess(self,prediction,im0,proto=None,conf_thres=0.25,iou_thres=0.45,max_det=100):
+    def postprocess(self,prediction,im0,conf_thres,proto=None,iou_thres=0.45,max_det=100):
         """
         Args:
             prediction (list): a list of object detection predictions
@@ -161,7 +161,7 @@ class YoLov5TRT:
                 mask = self.process_mask(proto[i], det[:, 6:], det[:, :4], model_shape, upsample=True) 
                 masks += [mask]
                 segs = [
-                        self.scale_segments(model_shape, x, im0.shape, normalize=True)
+                        self.scale_segments(model_shape, x, im0.shape, normalize=False)
                         for x in reversed(self.masks2segments(mask))]
                 segments += [segs]
             det[:, :4] = self.scale_boxes(model_shape, det[:, :4], im0.shape).round()
@@ -171,11 +171,10 @@ class YoLov5TRT:
     
     def non_max_suppression(self, 
         prediction,
-        conf_thres=0.25,
+        conf_thres,
         iou_thres=0.45,
         classes=None,
         agnostic=False,
-        multi_label=False,
         labels=(),
         max_det=100,
         nm=0,  # number of masks
@@ -193,10 +192,10 @@ class YoLov5TRT:
 
         bs = prediction.shape[0]  # batch size
         nc = prediction.shape[2] - nm - 5  # number of classes
-        xc = prediction[..., 4] > conf_thres  # candidates
+        xc = prediction[..., 4] > 0.01   # candidates
 
         # Checks
-        assert 0 <= conf_thres <= 1, f'Invalid Confidence threshold {conf_thres}, valid values are between 0.0 and 1.0'
+        # assert 0 <= conf_thres <= 1, f'Invalid Confidence threshold {conf_thres}, valid values are between 0.0 and 1.0'
         assert 0 <= iou_thres <= 1, f'Invalid IoU {iou_thres}, valid values are between 0.0 and 1.0'
 
         # Settings
@@ -205,7 +204,7 @@ class YoLov5TRT:
         max_nms = 30000  # maximum number of boxes into torchvision.ops.nms()
         time_limit = 0.5 + 0.05 * bs  # seconds to quit after
         redundant = True  # require redundant detections
-        multi_label &= nc > 1  # multiple labels per box (adds 0.5ms/img)
+        # multi_label &= nc > 1  # multiple labels per box (adds 0.5ms/img)
         merge = False  # use merge-NMS
 
         # t = time.time()
@@ -237,12 +236,13 @@ class YoLov5TRT:
             mask = x[:, mi:]  # zero columns if no masks
 
             # Detections matrix nx6 (xyxy, conf, cls)
-            if multi_label:
-                i, j = (x[:, 5:mi] > conf_thres).nonzero(as_tuple=False).T
-                x = torch.cat((box[i], x[i, 5 + j, None], j[:, None].float(), mask[i]), 1)
-            else:  # best class only
-                conf, j = x[:, 5:mi].max(1, keepdim=True)
-                x = torch.cat((box, conf, j.float(), mask), 1)[conf.view(-1) > conf_thres]
+            # if multi_label:
+            #     i, j = (x[:, 5:mi] > conf_thres).nonzero(as_tuple=False).T
+            #     x = torch.cat((box[i], x[i, 5 + j, None], j[:, None].float(), mask[i]), 1)
+            # best class only
+            conf, j = x[:, 5:mi].max(1, keepdim=True)
+            conf_thres_tmp = torch.tensor([conf_thres[c.item()] for c in j], device=x.device)
+            x = torch.cat((box, conf, j.float(), mask), 1)[conf.view(-1) > conf_thres_tmp]
 
             # Filter by class
             if classes is not None:
