@@ -107,7 +107,7 @@ if __name__ == '__main__':
     for batch in batches:
         for p in batch:
             t1 = time.time()
-            im,im0 = engine.preprocess(p)
+            im,im0 = engine.load_with_preprocess(p)
             if engine.use_mask:
                 pred,proto = engine.forward(im)
                 dets,segs,masks = engine.postprocess(pred,im0,proto)

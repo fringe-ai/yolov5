@@ -103,7 +103,25 @@ class YoLov5TRT:
         return self.forward(im)
     
     
-    def preprocess(self, im_path:str):
+    def preprocess(self, im0, BGR_to_RGB=False):
+        """im preprocess
+            BGR_to_RGB -> normalization -> CHW -> contiguous -> BCHW
+        Args:
+            im0 (numpy.ndarray): the input numpy array, HWC format
+            BGR_to_RGB (boolean): change im0 to RGB
+        """
+        if BGR_to_RGB:
+            im0 = im0[:,:,::-1]
+        im = im0.astype(np.float32)
+        im /= 255 # normalize to [0,1]
+        im = im.transpose((2, 0, 1)) # HWC to CHW
+        im = np.ascontiguousarray(im)  # contiguous
+        if len(im.shape) == 3:
+            im = im[None] # expand for batch dim
+        return self.from_numpy(im), im0
+    
+    
+    def load_with_preprocess(self, im_path:str):
         """im preprocess
 
         Args:
@@ -116,13 +134,7 @@ class YoLov5TRT:
         else:
             im0 = cv2.imread(im_path) #BGR format
             im0 = im0[:,:,::-1] #BGR to RGB
-        im = im0.astype(np.float32)
-        im /= 255 # normalize to [0,1]
-        im = im.transpose((2, 0, 1)) # HWC to CHW
-        im = np.ascontiguousarray(im)  # contiguous
-        if len(im.shape) == 3:
-            im = im[None] # expand for batch dim
-        return self.from_numpy(im), im0
+        return self.preprocess(im0)
     
     
     def postprocess(self,prediction,im0,proto=None,conf_thres=0.25,iou_thres=0.45,max_det=100):
