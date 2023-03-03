@@ -1,26 +1,27 @@
 # Training Steps
 ## Activate the virtual environments
-The following command assume that the virtual python environment are installed in `~/virtual_env`.
+The following command assumes that the virtual python environment is installed in `~/virtual_env`.
 
 ```bash
 source ~/virtual_env/bin/activate
 ```
+
 ## Install the libraries
-
 ```bash
-git clone --recursive https://github.com/lmitechnologies/LMI_AI_Solutions.git
-cd object_detectors/yolov5
-pip install -r requirements.txt
+git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && cd LMI_AI_Solutions && git submodule update --init object_detectors/yolov5
+
+pip install -r object_detectors/yolov5/requirements.txt
 ```
+
 ## Activate LMI_AI environment
-The following commands assume that the LMI_AI_Solution repo is cloned in `~/LMI_AI_Solutions`, and assume that it's the working directory, unless otherwise mentioned.
+The following commands assume that the LMI_AI_Solution repo is cloned in `~/LMI_AI_Solutions`. This tutorial assumes that the working directory is your home directionry i.e., `~`.
 
 ```bash
-source ~/LMI_AI_Solutions/lmi_ai.env 
+source ~/LMI_AI_Solutions/lmi_ai.env
 ```
 
 ## Prepare the datasets
-The example dataset can be downloaded using GCP (the link will be provided later):
+The example dataset can be downloaded using gcloud CLI (the link will be provided later):
 ```
 allImages_1024
 ```
@@ -33,13 +34,14 @@ Assume that the original annotated files are downloaded in `./data/allImages_102
 
 ```bash
 python -m label_utils.resize_with_csv --path_imgs ./data/allImages_1024 --out_imsz 640,640 --path_out ./data/resized_640
+
 python -m label_utils.convert_data_to_yolo --path_imgs ./data/resized_640 --path_out ./data/resized_640_yolo
 ```
 
 ## Create a yaml file indicating the locations of datasets
 Note that the order of class names in the yaml file must match with the order of names in this json file: `./data/resized_640_yolo/class_map.json`.
 ```yaml
-path: /home/yijun.jiang/projects/LMI_AI_Solutions/data/resized_640_yolo  # dataset root dir (must use absolute path!)
+path: /home/user/data/resized_640_yolo  # dataset root dir (must use absolute path!)
 train: images  # train images (relative to 'path')
 val: images  # val images (relative to 'path')
 test:  # test images (optional)
@@ -50,12 +52,12 @@ names: # class names must match with the names in class_map.json
   1: scuff
   2: white
 ```
-Let's save the yaml file as `./config/example.yaml`
+Let's save the yaml file as `./config/example.yaml`.
 
-## Download the pre-trained yolo model
+## Download the pre-trained yolo model (optional)
 The pre-trained yolo models can be found in: https://github.com/ultralytics/yolov5/releases/tag/v7.0. 
-The following command shows that 
-- download [the pre-trained model (yolov5s.pt)](https://github.com/ultralytics/yolov5/releases/download/v7.0/yolov5s.pt)
+The command below shows that 
+- download the pre-trained model (`yolov5s.pt`).
 - save it to `./pretrained-models`.
 
 ```bash
@@ -63,8 +65,8 @@ wget https://github.com/ultralytics/yolov5/releases/download/v7.0/yolov5s.pt -P 
 ```
 
 ## Train the model
-The command below trains the datasets in the yaml file with the following arguments:
-- img: image size
+The command below trains the model with the datasets in the yaml file. It has the following arguments:
+- img: image size (the largest edge if images are rectangular)
 - batch: batch size
 - data: the path to the yaml file
 - **rect: if the images are rectangular**
@@ -111,6 +113,5 @@ The output results are saved in `./validation/example`.
 
 # Generate TensorRT Engine
 Two ways of generating tensorRT engine.
-1. Refer to https://github.com/lmitechnologies/tensorrtx/blob/master/yolov5/README.md.   
-2. Refer to here (still developing): https://github.com/lmitechnologies/yolov5/tree/ais/trt/x86.  
-
+1. Refer to here: https://github.com/lmitechnologies/yolov5/tree/ais/trt.
+2. Refer to here (depreciated): https://github.com/lmitechnologies/tensorrtx/blob/master/yolov5/README.md.   

@@ -46,7 +46,7 @@ class TRT_Model:
         self.bindings = []
 
         for binding in self.engine:
-            self.logger.info(f'{self.name} binding:', binding, self.engine.get_binding_shape(binding))
+            self.logger.info(f'{self.name} binding:, {binding}, {self.engine.get_binding_shape(binding)}')
             size = trt.volume(self.engine.get_binding_shape(binding)) * self.engine.max_batch_size
             dtype = trt.nptype(self.engine.get_binding_dtype(binding))
             # Allocate host and device buffers

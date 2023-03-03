@@ -8,6 +8,5 @@ WORKDIR /repos
 RUN pip3 install --upgrade pip
 RUN git clone https://github.com/lmitechnologies/LMI_AI_Solutions.git && cd LMI_AI_Solutions && git submodule update --init object_detectors/yolov5
 
-COPY requirements.txt /temp/requirements.txt
-RUN pip3 install -r /temp/requirements.txt
+RUN pip3 install -r /repos/LMI_AI_Solutions/object_detectors/yolov5/trt/arm/requirements.txt
 RUN pip3 install --ignore-installed PyYAML>=5.3.1

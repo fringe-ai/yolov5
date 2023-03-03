@@ -6,6 +6,8 @@ im_h=256
 
 python3 -m yolov5.export --weights $model_path/best.pt \
     --imgsz $im_h $im_w  --include engine --half --device 0
+    
+export LD_PRELOAD=/lib/aarch64-linux-gnu/libGLdispatch.so.0
 
 python3 -m yolov5.trt.infer_trt --engine $model_path/best.engine \
     --imsz $im_h $im_w --path_imgs /app/images --path_out /app/outputs

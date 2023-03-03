@@ -8,9 +8,9 @@ import torch.nn.functional as F
 import torchvision
 import tensorrt as trt
 
-# from yolov5.utils.general import xywh2xyxy, clip_boxes, scale_boxes, clip_segments, scale_segments
-# from yolov5.utils.metrics import box_iou
-# from yolov5.utils.segment.general import masks2segments, process_mask, crop_mask
+# from ..utils.general import xywh2xyxy, clip_boxes, scale_boxes, clip_segments, scale_segments
+# from ..utils.metrics import box_iou
+# from ..utils.segment.general import masks2segments, process_mask, crop_mask
 
 
 class YoLov5TRT:
@@ -103,7 +103,25 @@ class YoLov5TRT:
         return self.forward(im)
     
     
-    def preprocess(self, im_path:str):
+    def preprocess(self, im0, BGR_to_RGB=False):
+        """im preprocess
+            BGR_to_RGB -> normalization -> CHW -> contiguous -> BCHW
+        Args:
+            im0 (numpy.ndarray): the input numpy array, HWC format
+            BGR_to_RGB (boolean): change im0 to RGB
+        """
+        if BGR_to_RGB:
+            im0 = im0[:,:,::-1]
+        im = im0.astype(np.float32)
+        im /= 255 # normalize to [0,1]
+        im = im.transpose((2, 0, 1)) # HWC to CHW
+        im = np.ascontiguousarray(im)  # contiguous
+        if len(im.shape) == 3:
+            im = im[None] # expand for batch dim
+        return self.from_numpy(im), im0
+    
+    
+    def load_with_preprocess(self, im_path:str):
         """im preprocess
 
         Args:
@@ -116,16 +134,10 @@ class YoLov5TRT:
         else:
             im0 = cv2.imread(im_path) #BGR format
             im0 = im0[:,:,::-1] #BGR to RGB
-        im = im0.astype(np.float32)
-        im /= 255 # normalize to [0,1]
-        im = im.transpose((2, 0, 1)) # HWC to CHW
-        im = np.ascontiguousarray(im)  # contiguous
-        if len(im.shape) == 3:
-            im = im[None] # expand for batch dim
-        return self.from_numpy(im), im0
+        return self.preprocess(im0)
     
     
-    def postprocess(self,prediction,im0,proto=None,conf_thres=0.25,iou_thres=0.45,max_det=100):
+    def postprocess(self,prediction,im0,conf_thres,proto=None,iou_thres=0.45,max_det=100):
         """
         Args:
             prediction (list): a list of object detection predictions
@@ -149,7 +161,7 @@ class YoLov5TRT:
                 mask = self.process_mask(proto[i], det[:, 6:], det[:, :4], model_shape, upsample=True) 
                 masks += [mask]
                 segs = [
-                        self.scale_segments(model_shape, x, im0.shape, normalize=True)
+                        self.scale_segments(model_shape, x, im0.shape, normalize=False)
                         for x in reversed(self.masks2segments(mask))]
                 segments += [segs]
             det[:, :4] = self.scale_boxes(model_shape, det[:, :4], im0.shape).round()
@@ -159,11 +171,10 @@ class YoLov5TRT:
     
     def non_max_suppression(self, 
         prediction,
-        conf_thres=0.25,
+        conf_thres,
         iou_thres=0.45,
         classes=None,
         agnostic=False,
-        multi_label=False,
         labels=(),
         max_det=100,
         nm=0,  # number of masks
@@ -181,10 +192,10 @@ class YoLov5TRT:
 
         bs = prediction.shape[0]  # batch size
         nc = prediction.shape[2] - nm - 5  # number of classes
-        xc = prediction[..., 4] > conf_thres  # candidates
+        xc = prediction[..., 4] > 0.01   # candidates
 
         # Checks
-        assert 0 <= conf_thres <= 1, f'Invalid Confidence threshold {conf_thres}, valid values are between 0.0 and 1.0'
+        # assert 0 <= conf_thres <= 1, f'Invalid Confidence threshold {conf_thres}, valid values are between 0.0 and 1.0'
         assert 0 <= iou_thres <= 1, f'Invalid IoU {iou_thres}, valid values are between 0.0 and 1.0'
 
         # Settings
@@ -193,7 +204,7 @@ class YoLov5TRT:
         max_nms = 30000  # maximum number of boxes into torchvision.ops.nms()
         time_limit = 0.5 + 0.05 * bs  # seconds to quit after
         redundant = True  # require redundant detections
-        multi_label &= nc > 1  # multiple labels per box (adds 0.5ms/img)
+        # multi_label &= nc > 1  # multiple labels per box (adds 0.5ms/img)
         merge = False  # use merge-NMS
 
         # t = time.time()
@@ -225,12 +236,13 @@ class YoLov5TRT:
             mask = x[:, mi:]  # zero columns if no masks
 
             # Detections matrix nx6 (xyxy, conf, cls)
-            if multi_label:
-                i, j = (x[:, 5:mi] > conf_thres).nonzero(as_tuple=False).T
-                x = torch.cat((box[i], x[i, 5 + j, None], j[:, None].float(), mask[i]), 1)
-            else:  # best class only
-                conf, j = x[:, 5:mi].max(1, keepdim=True)
-                x = torch.cat((box, conf, j.float(), mask), 1)[conf.view(-1) > conf_thres]
+            # if multi_label:
+            #     i, j = (x[:, 5:mi] > conf_thres).nonzero(as_tuple=False).T
+            #     x = torch.cat((box[i], x[i, 5 + j, None], j[:, None].float(), mask[i]), 1)
+            # best class only
+            conf, j = x[:, 5:mi].max(1, keepdim=True)
+            conf_thres_tmp = torch.tensor([conf_thres[c.item()] for c in j], device=x.device)
+            x = torch.cat((box, conf, j.float(), mask), 1)[conf.view(-1) > conf_thres_tmp]
 
             # Filter by class
             if classes is not None:
@@ -282,38 +294,35 @@ class YoLov5TRT:
             iou (Tensor[N, M]): the NxM matrix containing the pairwise
                 IoU values for every element in boxes1 and boxes2
         """
-        def box_area(box):
-            # box = xyxy(4,n)
-            return (box[2] - box[0]) * (box[3] - box[1])
 
         # inter(N,M) = (rb(N,M,2) - lt(N,M,2)).clamp(0).prod(2)
-        (a1, a2), (b1, b2) = box1[:, None].chunk(2, 2), box2.chunk(2, 1)
+        (a1, a2), (b1, b2) = box1.unsqueeze(1).chunk(2, 2), box2.unsqueeze(0).chunk(2, 2)
         inter = (torch.min(a2, b2) - torch.max(a1, b1)).clamp(0).prod(2)
 
         # IoU = inter / (area1 + area2 - inter)
-        return inter / (box_area(box1.T)[:, None] + box_area(box2.T) - inter + eps)
+        return inter / ((a2 - a1).prod(2) + (b2 - b1).prod(2) - inter + eps)
 
 
     def xywh2xyxy(self, x):
         # Convert nx4 boxes from [x, y, w, h] to [x1, y1, x2, y2] where xy1=top-left, xy2=bottom-right
         y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
-        y[:, 0] = x[:, 0] - x[:, 2] / 2  # top left x
-        y[:, 1] = x[:, 1] - x[:, 3] / 2  # top left y
-        y[:, 2] = x[:, 0] + x[:, 2] / 2  # bottom right x
-        y[:, 3] = x[:, 1] + x[:, 3] / 2  # bottom right y
+        y[..., 0] = x[..., 0] - x[..., 2] / 2  # top left x
+        y[..., 1] = x[..., 1] - x[..., 3] / 2  # top left y
+        y[..., 2] = x[..., 0] + x[..., 2] / 2  # bottom right x
+        y[..., 3] = x[..., 1] + x[..., 3] / 2  # bottom right y
         return y
     
     
     def clip_boxes(self, boxes, shape):
         # Clip boxes (xyxy) to image shape (height, width)
         if isinstance(boxes, torch.Tensor):  # faster individually
-            boxes[:, 0].clamp_(0, shape[1])  # x1
-            boxes[:, 1].clamp_(0, shape[0])  # y1
-            boxes[:, 2].clamp_(0, shape[1])  # x2
-            boxes[:, 3].clamp_(0, shape[0])  # y2
+            boxes[..., 0].clamp_(0, shape[1])  # x1
+            boxes[..., 1].clamp_(0, shape[0])  # y1
+            boxes[..., 2].clamp_(0, shape[1])  # x2
+            boxes[..., 3].clamp_(0, shape[0])  # y2
         else:  # np.array (faster grouped)
-            boxes[:, [0, 2]] = boxes[:, [0, 2]].clip(0, shape[1])  # x1, x2
-            boxes[:, [1, 3]] = boxes[:, [1, 3]].clip(0, shape[0])  # y1, y2
+            boxes[..., [0, 2]] = boxes[..., [0, 2]].clip(0, shape[1])  # x1, x2
+            boxes[..., [1, 3]] = boxes[..., [1, 3]].clip(0, shape[0])  # y1, y2
     
     
     def scale_boxes(self, img1_shape, boxes, img0_shape, ratio_pad=None):
@@ -325,9 +334,9 @@ class YoLov5TRT:
             gain = ratio_pad[0][0]
             pad = ratio_pad[1]
 
-        boxes[:, [0, 2]] -= pad[0]  # x padding
-        boxes[:, [1, 3]] -= pad[1]  # y padding
-        boxes[:, :4] /= gain
+        boxes[..., [0, 2]] -= pad[0]  # x padding
+        boxes[..., [1, 3]] -= pad[1]  # y padding
+        boxes[..., :4] /= gain
         self.clip_boxes(boxes, img0_shape)
         return boxes
     
