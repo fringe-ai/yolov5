@@ -88,6 +88,7 @@ if __name__ == '__main__':
     parser.add_argument('--imsz',type=int,nargs=2,help='the image size: h w')
     parser.add_argument('-i','--path_imgs',help='the path to the images')
     parser.add_argument('-o','--path_out',help='the path to the output folder')
+    parser.add_argument('-c','--confidence',default=0.25,type=float,help='the confidence for all classes')
     args = parser.parse_args()
     
     h,w = args.imsz
@@ -102,6 +103,7 @@ if __name__ == '__main__':
         t2 = time.time()
         logger.info(f'warm up proc time -> {t2-t1:.4f}')
         
+    confs = {i:args.confidence for i in range(999)}
     batches = get_img_path_batches(batch_size=BATCH_SIZE, img_dir=args.path_imgs)
     logger.info(f'loaded {len(batches)} with a batch size of {BATCH_SIZE}')
     for batch in batches:
