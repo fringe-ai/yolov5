@@ -112,10 +112,10 @@ if __name__ == '__main__':
             im,im0 = engine.load_with_preprocess(p)
             if engine.use_mask:
                 pred,proto = engine.forward(im)
-                dets,segs,masks = engine.postprocess(pred,im0,proto)
+                dets,segs,masks = engine.postprocess(pred,im0,confs,proto)
             else:
                 pred = engine.forward(im)
-                dets = engine.postprocess(pred,im0)
+                dets = engine.postprocess(pred,im0,confs)
 
             #annotation
             fname = os.path.basename(p)
