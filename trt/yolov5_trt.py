@@ -45,12 +45,12 @@ class YoLov5TRT:
             
             self.logger.info(f'binding {name} with the shape of {model.get_binding_shape(i)}')
             if model.binding_is_input(i):
+                input_h,input_w = model.get_binding_shape(i)[-2:]
+                self.logger.info(f'found tensorRT input h,w = {input_h,input_w}')
                 if -1 in tuple(model.get_binding_shape(i)):  # dynamic
                     dynamic = True
                     context.set_binding_shape(i, tuple(model.get_profile_shape(0, i)[2]))
                 if dtype == np.float16:
-                    input_h,input_w = model.get_binding_shape(i)[-2:]
-                    self.logger.info(f'found tensorRT input h,w = {input_h,input_w}')
                     fp16 = True
             else:  # output
                 output_names.append(name)
