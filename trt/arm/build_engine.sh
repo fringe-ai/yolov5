@@ -1,13 +1,11 @@
 source /repos/LMI_AI_Solutions/lmi_ai.env
 
-model_path='/app/trained-inference-models/2022-12-16'
-im_w=640
-im_h=256
-
-python3 -m yolov5.export --weights $model_path/best.pt \
-    --imgsz $im_h $im_w  --include engine --half --device 0
-    
 export LD_PRELOAD=/lib/aarch64-linux-gnu/libGLdispatch.so.0
 
-python3 -m yolov5.trt.infer_trt --engine $model_path/best.engine \
-    --imsz $im_h $im_w --path_imgs /app/images --path_out /app/outputs
+# convert to tensorRT engine
+python3 -m yolov5.export --weights $MODEL_PATH/best.pt \
+    --imgsz $IM_H $IM_W  --include engine --half --device 0
+
+# validation
+python3 -m yolov5.trt.infer_trt --engine $MODEL_PATH/best.engine \
+    --imsz $IM_H $IM_W --path_imgs /app/images --path_out /app/validation

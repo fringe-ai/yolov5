@@ -7,8 +7,12 @@ services:
     volumes:
       - ./data/images:/app/images
       - ./trained-inference-models/:/app/trained-inference-models/
-      - ./outputs/:/app/outputs/
+      - ./validation/:/app/validation/
       - ./build_engine.sh:/app/build_engine.sh
+    environment:
+      - MODEL_PATH=/app/trained-inference-models/2022-12-16
+      - IM_W=640
+      - IM_H=256
     deploy:
         resources:
           reservations:
