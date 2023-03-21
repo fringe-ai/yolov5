@@ -142,8 +142,8 @@ class YoLov5TRT:
         Args:
             prediction (list): a list of object detection predictions
             im0 (np.ndarray): the numpy image
+            conf_thres (dict): confidence threshold dict <class_id: confidence>.
             proto (tensor, optional): mask predictions. Defaults to None.
-            conf_thres (float, optional): confidence threshold. Defaults to 0.25.
             iou_thres (float, optional): iou threshold. Defaults to 0.45.
             max_det (int, optional): the max number of detections. Defaults to 100.
 
