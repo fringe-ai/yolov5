@@ -58,6 +58,7 @@ pd.options.display.max_columns = 10
 cv2.setNumThreads(0)  # prevent OpenCV from multithreading (incompatible with PyTorch DataLoader)
 os.environ['NUMEXPR_MAX_THREADS'] = str(NUM_THREADS)  # NumExpr max threads
 os.environ['OMP_NUM_THREADS'] = '1' if platform.system() == 'darwin' else str(NUM_THREADS)  # OpenMP (PyTorch and SciPy)
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'  # suppress verbose TF compiler warnings in Colab
 
 
 def is_ascii(s=''):
@@ -1135,6 +1136,7 @@ def imshow(path, im):
     imshow_(path.encode('unicode_escape').decode(), im)
 
 
-cv2.imread, cv2.imwrite, cv2.imshow = imread, imwrite, imshow  # redefine
+if Path(inspect.stack()[0].filename).parent.parent.as_posix() in inspect.stack()[-1].filename:
+    cv2.imread, cv2.imwrite, cv2.imshow = imread, imwrite, imshow  # redefine
 
 # Variables ------------------------------------------------------------------------------------------------------------
