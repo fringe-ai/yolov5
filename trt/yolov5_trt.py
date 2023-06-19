@@ -137,7 +137,7 @@ class YoLov5TRT:
         return self.preprocess(im0)
     
     
-    def postprocess(self,prediction,im0,conf_thres,proto=None,iou_thres=0.45,max_det=100):
+    def postprocess(self,prediction,im0,conf_thres,proto=None,iou_thres=0.45,agnostic=False,max_det=100):
         """
         Args:
             prediction (list): a list of object detection predictions
@@ -146,10 +146,10 @@ class YoLov5TRT:
             proto (tensor, optional): mask predictions. Defaults to None.
             iou_thres (float, optional): iou threshold. Defaults to 0.45.
             max_det (int, optional): the max number of detections. Defaults to 100.
-
+            agnostic (bool, optional): perform class-agnostic NMS. Defaults to False.
         """
         # Process predictions
-        pred = self.non_max_suppression(prediction,max_det=max_det,conf_thres=conf_thres,iou_thres=iou_thres)
+        pred = self.non_max_suppression(prediction,conf_thres,iou_thres,agnostic=agnostic,max_det=max_det)
         segments = []
         masks = []
         for i,det in enumerate(pred):  # per image
