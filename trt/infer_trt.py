@@ -9,7 +9,6 @@ from yolov5.trt.yolov5_trt import YoLov5TRT
 
 
 BATCH_SIZE = 1
-logging.basicConfig(level=logging.DEBUG)
 
 
 def get_img_path_batches(batch_size, img_dir):
@@ -90,6 +89,8 @@ if __name__ == '__main__':
     parser.add_argument('-o','--path_out',help='the path to the output folder')
     parser.add_argument('-c','--confidence',default=0.25,type=float,help='the confidence for all classes')
     args = parser.parse_args()
+    
+    logging.basicConfig(level=logging.NOTSET)
     
     h,w = args.imsz
     engine = YoLov5TRT(args.engine)
