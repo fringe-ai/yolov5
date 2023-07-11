@@ -5,9 +5,9 @@ services:
       context: .
       dockerfile: ./arm.dockerfile
     volumes:
-      - ./data/images:/app/images
+      - ./data/images:/app/images # validation data (optional)
       - ./trained-inference-models/:/app/trained-inference-models/
-      - ./validation/:/app/validation/
+      - ./validation/:/app/validation/ # model output
     environment:
       - MODEL_PATH=/app/trained-inference-models/2022-12-16
       - IM_W=640
