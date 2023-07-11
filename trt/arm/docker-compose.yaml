@@ -12,11 +12,5 @@ services:
       - MODEL_PATH=/app/trained-inference-models/2022-12-16
       - IM_W=640
       - IM_H=256
-    deploy:
-        resources:
-          reservations:
-            devices:
-              - driver: nvidia
-                count: 1
-                capabilities: [gpu]
+    runtime: nvidia
     command: bash /repos/LMI_AI_Solutions/object_detectors/yolov5/trt/arm/build_engine.sh
